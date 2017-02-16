@@ -1,0 +1,59 @@
+language: java
+sudo: required
+dist: trusty
+services:
+- docker
+- mysql
+- postgresql
+addons:
+  postgresql: '9.5'
+  sonarqube:
+    token:
+      secure: djr1ieBc7daRiHXhZWcQ2vMJKUNP4X/hicq/71xiBY0kLKEgGi5VJe/gEAFkCAXNmA9eu/O+y2dK5gmn/MOwYPIxOVmC3jbBuGeYGzO6xEJconygGQQRlmFL75VM1rWsxuFUJiRXyGwykptVG9IrzevBHxOUp4kqwip6mwd9STHDAsBTMw0W062oM3vjXw84Fj6HAWmesydjIeZ/RAaNKC9XDrmAWdcNGPJZDNUi+TxAuy2Th/TNDC5hVF9jvcHayKF0evJ05e7l6E8mxALj3Jp82nNbz7FtUKj3a/YfN6JZQXzG/r1pTBr3fG2MpYEyXhurA8XHAJqx8MNc4kEMSe6i43g6CMvOG/6VrOB6lkG3rxkVzdPdjPz2XVaskQJNPlRKKpFfIm5xu5/lNcwPKcrB3/5gL5XXV7Rh3l8yODK2y0eQJ93n0yIT2p1ejRjhJBOC8Y67HVCmDlL8Bc2WEqGRQ1/Ca69m7/JoLbKyl/v2SIOBlR/QTfa6LrayOpM2Mqvzf+TBnypJS4yFAtXYUtnuOwc4xwBw9uwNl/v6eGvJKA1Y6HWEItUjCkHia4WNyGYLen6OwL0VfydBGJWBG9asonRk/8jjbYcblmqTW3N+D5D4J3oG99LD0TRcftx9KSHd/4Y1QHtMI1YvN+ZFIxtQYN5X+V0sGUpYjRoSSb0=
+    github_token:
+      secure: iSjNmVPx3JpF2NAKiK9Nidkbi5Gz0V9uQi5gIZZasLiLkLkSo9YAGoPlP1UI2glPwwiSqS66v0qngzck116JR/9M5lUTwOalum2mWPzxt5cRyKnEyczG7KuKntU+PyyiInfUcs3QOb/KU+CTkRAqQVxRdC+fDOIUhyaRRyAUJ9BZqvkU/lSe6pSEaL/eLGNDyN87Tqzu03EXnkJcSM0GsuW3oe5v1L+eL0WxL9X9DfxNJCnxheTmSyTati42w+lU5MusxzK711qethIwhUUIJ8hGiHMkbJvkIfUEtqsoHzgrQEzRRkiJvxOvLvGyVTtXARGgv1QwkxhR+ql7/QT1Z5hSHY0erKlu12TUkDKVAFmTub6O3IjT5xEPl6eAGT8pJKbuNq0iP3IvFTrCCloWbtkcBYAZjg38C+Ks0x1ysmmfhiMn0QPWb0jW6AlEPoSf36vSMqC8yroCd5H8fIRJ30JVGp3psLlxBjdoxDWAa1K9136TU36VxLOj90ULsF8aKSTrSZ6z2QjpHRpN2s/S69p7kgFa6ODzGJReLbn7Cu1hMpJTie95o3GwvMsVLP7qsaabyBU6OkQ60lIIyR8c5Psi+CiGJZJvCPHJ41UJhLqrPNjw1RIBWDRXNCM8h1japTLAPS7fmdQl5GYLZ90ReJXErHOrvCp/UpfhGO816cc=
+jdk: oraclejdk8
+cache:
+  directories:
+  - $HOME/.m2/repository
+#  - $HOME/.sonar/cache
+#  - $HOME/jvm
+  
+#before_cache:
+#- rm -rf $HOME/.m2/repository/org/zhj2074
+#- find $HOME/.m2 -name resolver-status.properties -exec rm {} \;
+before_install:
+- psql -U postgres -c "CREATE DATABASE presse OWNER postgres;"
+- docker pull ruwen/mysql-server-5.1
+- docker run -p 3351:3306 --name mysql-51 -d ruwen/mysql-server-5.1
+- docker ps -a
+- |
+  while ! mysqladmin ping -h127.0.0.1 -P3351 --silent; do
+    echo "$(date) - still trying 3351"
+    sleep 1
+  done
+- echo "$(date) - connected successfully 3351"
+- docker exec -i mysql-51 mysql -uroot --version
+- docker exec -i mysql-51 mysql -uroot <<< "select now();"
+- echo "select now();" > dump.sql
+- docker exec -i mysql-51 mysql -uroot < dump.sql
+- docker exec -i mysql-51 mysql -uroot <<< "CREATE DATABASE IF NOT EXISTS test;"
+- docker exec -i mysql-51 mysql -uroot <<< "create user 'bulletinage'@'%' IDENTIFIED
+  BY 'bulletinage';"
+- docker exec -i mysql-51 mysql -uroot <<< "GRANT ALL PRIVILEGES ON *.* TO 'bulletinage'@'%';"
+- docker exec -i mysql-51 mysql -uroot -e 'show databases;'
+- cd $TRAVIS_BUILD_DIR/mysql51/src/test/resources/mysql
+- docker exec -i mysql-51 mysql test -uroot < table.sql
+- docker exec -i mysql-51 mysql test -uroot < ps.sql
+- docker exec -i mysql-51 mysql test -uroot -e 'show tables;'
+script:
+- cd $TRAVIS_BUILD_DIR/dep && mvn clean org.jacoco:jacoco-maven-plugin:prepare-agent install sonar:sonar
+- docker exec -i mysql-51 mysql test -uroot -e 'show tables;'
+- cd $TRAVIS_BUILD_DIR/mysql51 && mvn clean org.jacoco:jacoco-maven-plugin:prepare-agent test sonar:sonar -Ddb.url="127.0.0.1:3351" -Ddb.name=test -Ddb.user=bulletinage -Ddb.password=bulletinage
+#after_script:
+#- |
+#  curl -u 2e64492ad19621634d061579a45d1d32b3b8286d: --data "key=org.zhj2074:dep" https://sonarqube.com/api/projects/bulk_delete
+#  curl -u 2e64492ad19621634d061579a45d1d32b3b8286d: --data "key=org.zhj2074:mysql51" https://sonarqube.com/api/projects/delete
+#  curl -u 2e64492ad19621634d061579a45d1d32b3b8286d: --data "key=org.zhj2074:dep,org.zhj2074:mysql51" https://sonarqube.com/api/projects/bulk_delete
+#  curl -u 2e64492ad19621634d061579a45d1d32b3b8286d: --data "key=org.zhj2074:dep&name=dep" https://sonarqube.com/api/projects/create
+#  curl -u 2e64492ad19621634d061579a45d1d32b3b8286d: --data "key=org.zhj2074:mysql51&name=mysql51" https://sonarqube.com/api/projects/create
