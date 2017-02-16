@@ -5,6 +5,7 @@ services:
 - docker
 - mysql
 - postgresql
+
 addons:
   postgresql: '9.5'
   sonarqube:
